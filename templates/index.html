@@ -22,6 +22,8 @@
         .low { border-left-color: #4caf50; }
         .header { display: flex; justify-content: space-between; margin-bottom: 10px; }
         .badge { background-color: #333; padding: 3px 8px; border-radius: 4px; font-size: 0.8em; }
+        .btn-approve { background-color: #00bcd4; color: #000; border: none; padding: 5px 15px; cursor: pointer; border-radius: 5px; font-weight: bold; }
+        .btn-approve:hover { background-color: #00acc1; }
     </style>
 </head>
 <body>
@@ -29,10 +31,10 @@
     
     <h2>Incident Summary</h2>
     <div class="summary-container">
-        <div class="summary-box"><div class="summary-number crit-num">1</div>Critical</div>
-        <div class="summary-box"><div class="summary-number high-num">2</div>High</div>
-        <div class="summary-box"><div class="summary-number low-num">1</div>Low</div>
-        <div class="summary-box"><div class="summary-number total-num">4</div>Total Alerts</div>
+        <div class="summary-box"><div class="summary-number crit-num" id="crit">0</div>Critical</div>
+        <div class="summary-box"><div class="summary-number high-num" id="high">0</div>High</div>
+        <div class="summary-box"><div class="summary-number low-num" id="low">0</div>Low</div>
+        <div class="summary-box"><div class="summary-number total-num" id="total">0</div>Total Alerts</div>
     </div>
 
     <h2>Agent Pipeline</h2>
@@ -51,35 +53,66 @@
     </div>
 
     <h2 style="margin-top: 30px;">Live Alerts</h2>
-    <div id="logs-container">
-        <div class="card critical">
-            <div class="header"><strong>Malware Detected</strong> <span class="badge">Risk: 9/10 | MITRE: T1204</span></div>
-            <div><em>Description:</em> Malware signature detected on file system</div>
-            <div><em>Threat Intel Check:</em> Known Malicious IP</div>
-            <div><strong>Recommendation:</strong> Block IP immediately</div>
-            <div style="margin-top: 10px;"><strong>Status: Waiting for Human Approval</strong></div>
-        </div>
-        <div class="card high">
-            <div class="header"><strong>Brute Force Behavior</strong> <span class="badge">Risk: 10/10 | MITRE: T1110</span></div>
-            <div><em>Description:</em> 50 failed login attempts from 45.33.32.156</div>
-            <div><em>Threat Intel Check:</em> Known Malicious IP</div>
-            <div><strong>Recommendation:</strong> Block IP immediately</div>
-            <div style="margin-top: 10px;"><strong>Status: Waiting for Human Approval</strong></div>
-        </div>
-        <div class="card low">
-            <div class="header"><strong>Policy Change</strong> <span class="badge">Risk: 3/10 | MITRE: T1562</span></div>
-            <div><em>Description:</em> Firewall rule modified by admin</div>
-            <div><em>Threat Intel Check:</em> Unknown / New IP</div>
-            <div><strong>Recommendation:</strong> No action required</div>
-            <div style="margin-top: 10px;"><strong>Status: Waiting for Human Approval</strong></div>
-        </div>
-        <div class="card high">
-            <div class="header"><strong>Anomaly Detected</strong> <span class="badge">Risk: 7/10 | MITRE: Unknown</span></div>
-            <div><em>Description:</em> Unusual traffic pattern from IP 192.168.1.100</div>
-            <div><em>Threat Intel Check:</em> Unknown / New IP</div>
-            <div><strong>Recommendation:</strong> Investigate and monitor</div>
-            <div style="margin-top: 10px;"><strong>Status: Waiting for Human Approval</strong></div>
-        </div>
-    </div>
+    <div id="logs-container"></div>
+
+    <script>
+        async function loadSummary(logs) {
+            let critical = 0, high = 0, low = 0;
+            logs.forEach(log => {
+                if (log.risk_level >= 8) critical++;
+                else if (log.risk_level >= 5) high++;
+                else low++;
+            });
+            document.getElementById('crit').innerText = critical;
+            document.getElementById('high').innerText = high;
+            document.getElementById('low').innerText = low;
+            document.getElementById('total').innerText = logs.length;
+        }
+
+        async function loadLogs() {
+            const response = await fetch('/api/logs');
+            const logs = await response.json();
+            const container = document.getElementById('logs-container');
+            container.innerHTML = ''; 
+
+            logs.forEach(log => {
+                const div = document.createElement('div');
+                let cardClass = 'card ';
+                if (log.risk_level >= 8) cardClass += 'critical';
+                else if (log.risk_level >= 5) cardClass += 'high';
+                else cardClass += 'low';
+                div.className = cardClass;
+                div.innerHTML = `
+                    <div class="header">
+                        <strong>${log.threat}</strong> 
+                        <span class="badge">Risk: ${log.risk_level}/10 | MITRE: ${log.mitre_id}</span>
+                    </div>
+                    <div><em>Description:</em> ${log.description}</div>
+                    <div><em>Threat Intel Check:</em> ${log.intel}</div>
+                    <div style="margin-top: 10px;"><strong>Recommendation:</strong> ${log.recommendation}</div>
+                    <div style="margin-top: 15px; border-top: 1px solid #333; padding-top: 10px;">
+                        <strong>Status: ${log.status}</strong>
+                        <button class="btn-approve" onclick="approveAction('${log.ip}', '${log.recommendation}')">Approve & Execute</button>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+            loadSummary(logs);
+        }
+
+        async function approveAction(ip, recommendation) {
+            const response = await fetch('/api/approve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ip: ip, recommendation: recommendation })
+            });
+            const result = await response.json();
+            alert(result.details); 
+            loadLogs();
+        }
+
+        window.onload = loadLogs;
+        setInterval(loadLogs, 5000);
+    </script>
 </body>
 </html>
