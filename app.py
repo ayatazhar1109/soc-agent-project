@@ -1,5 +1,5 @@
 from flask import Flask, render_template, jsonify, request
-import os, random
+import os, random, threading, time
 from datetime import datetime, timezone
 
 app = Flask(__name__)
@@ -7,26 +7,27 @@ app = Flask(__name__)
 THREAT_INTEL = ["45.33.32.156", "185.220.101.34", "91.240.118.187"]
 MITRE_MAP = {"brute force": "T1110", "malware": "T1204", "firewall": "T1562"}
 
-# Pre-filled logs so judges always see data
 logs = [
     {"timestamp": "2026-09-12T10:00:00Z", "source": "Authentication", "description": "50 failed login attempts from 45.33.32.156", "ip": "45.33.32.156"},
     {"timestamp": "2026-09-12T10:05:00Z", "source": "Network", "description": "Malware signature detected on file system", "ip": "192.168.1.5"},
     {"timestamp": "2026-09-12T10:10:00Z", "source": "Server", "description": "Firewall rule modified by admin", "ip": "10.0.0.1"},
 ]
 
-def add_log_on_demand():
+def generate_logs():
     templates = [
         {"source": "Authentication", "desc": "50 failed login attempts from 45.33.32.156", "ip": "45.33.32.156"},
         {"source": "Network", "desc": "Malware signature detected on file system", "ip": "192.168.1.5"},
         {"source": "Server", "desc": "Firewall rule modified by admin", "ip": "10.0.0.1"},
         {"source": "Firewall", "desc": "Suspicious outbound connection to 185.220.101.34 blocked", "ip": "185.220.101.34"},
     ]
-    new_log = random.choice(templates)
-    new_log['timestamp'] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-    new_log['description'] = new_log.pop('desc')
-    logs.append(new_log)
-    if len(logs) > 20:
-        logs.pop(0)
+    while True:
+        time.sleep(5)
+        new_log = random.choice(templates)
+        new_log['timestamp'] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        new_log['description'] = new_log.pop('desc')
+        logs.append(new_log)
+        if len(logs) > 20:
+            logs.pop(0)
 
 class SOCPipeline:
     def __init__(self):
@@ -86,7 +87,6 @@ def home(): return render_template('index.html')
 
 @app.route('/api/logs')
 def get_logs():
-    add_log_on_demand()
     p = SOCPipeline()
     p.agent_1_log_analysis(); p.agent_2_threat_detection(); p.agent_3_threat_intelligence()
     p.agent_4_risk_assessment(); p.agent_5_incident_response()
@@ -98,5 +98,6 @@ def approve_log():
     return jsonify({"status": "Executing Action", "details": f"Blocking IP {data['ip']} as per analyst approval"})
 
 if __name__ == '__main__':
+    threading.Thread(target=generate_logs, daemon=True).start()
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port, debug=False)
